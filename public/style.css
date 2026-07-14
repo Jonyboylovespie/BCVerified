@@ -22,7 +22,6 @@ main { width:min(1120px,calc(100% - 44px)); margin:auto; }
 .signed-in .hero>p:last-child { font-size:16px; line-height:1.5; }
 .signed-in .game-shell { margin-top:44px; }
 .game-shell { max-width:900px; margin:72px auto; background:rgba(7,81,157,.88); border:2px solid var(--ink); box-shadow:none; }
-.game-shell::before { content:"DAILY PUZZLE / VERIFIED PLATE"; display:block; padding:8px 12px; border-bottom:1px solid var(--line); font-size:11px; }
 .game-topline { padding:27px; display:grid; grid-template-columns:50px 1fr 50px; align-items:center; text-align:center; border-bottom:1px solid var(--line); }
 .game-topline h2 { margin:5px 0 0; font-size:31px; font-weight:400; }
 .game-topline p { margin:0; }
