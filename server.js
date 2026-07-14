@@ -1,0 +1,183 @@
+var express = require("express");
+var crypto = require("crypto");
+var fs = require("fs");
+var path = require("path");
+var game = require("./lib/game");
+var templates = require("./data/puzzles.json");
+
+var app = express();
+var port = Number(process.env.PORT || 3000);
+var secret = process.env.SESSION_SECRET || "dev-only-change-this-secret";
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET is required in production.");
+}
+var storePath = path.join(__dirname, "data", "store.json");
+var store = loadStore();
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "20kb" }));
+
+function loadStore() {
+  try { return JSON.parse(fs.readFileSync(storePath, "utf8")); }
+  catch (_) { return { users: [], games: {}, shares: {} }; }
+}
+
+function saveStore() {
+  var temp = storePath + ".tmp";
+  fs.writeFileSync(temp, JSON.stringify(store, null, 2));
+  fs.renameSync(temp, storePath);
+}
+
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function puzzleFor(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  var day = Math.floor(Date.parse(date + "T00:00:00Z") / 86400000);
+  var template = templates[((day % templates.length) + templates.length) % templates.length];
+  return { date: date, title: template.title, fact: template.fact, root: template.root };
+}
+
+function emptyState() {
+  return { solved: [], peeked: [], revealed: [], wrong: [], startedAt: new Date().toISOString(), completedAt: null, shareId: null };
+}
+
+function parseCookies(req) {
+  return String(req.headers.cookie || "").split(";").reduce(function (all, pair) {
+    var index = pair.indexOf("=");
+    if (index > 0) all[pair.slice(0, index).trim()] = decodeURIComponent(pair.slice(index + 1).trim());
+    return all;
+  }, {});
+}
+
+function sign(value) { return crypto.createHmac("sha256", secret).update(value).digest("base64url"); }
+
+function currentUser(req) {
+  var token = parseCookies(req).bc_session;
+  if (!token) return null;
+  var pieces = token.split(".");
+  if (pieces.length !== 2 || pieces[1].length !== sign(pieces[0]).length || !crypto.timingSafeEqual(Buffer.from(pieces[1]), Buffer.from(sign(pieces[0])))) return null;
+  try {
+    var payload = JSON.parse(Buffer.from(pieces[0], "base64url").toString());
+    if (payload.exp < Date.now()) return null;
+    return store.users.find(function (user) { return user.id === payload.id; }) || null;
+  } catch (_) { return null; }
+}
+
+function setSession(res, user) {
+  var payload = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 30 * 86400000 })).toString("base64url");
+  res.setHeader("Set-Cookie", "bc_session=" + payload + "." + sign(payload) + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000" + (process.env.NODE_ENV === "production" ? "; Secure" : ""));
+}
+
+function requireUser(req, res, next) {
+  req.user = currentUser(req);
+  if (!req.user) return res.status(401).json({ error: "Sign in to play and verify your score." });
+  next();
+}
+
+function profile(user) {
+  var completions = Object.keys(store.games).filter(function (key) { return key.indexOf(user.id + ":") === 0 && store.games[key].completedAt; }).map(function (key) { return key.split(":")[1]; }).sort().reverse();
+  var streak = 0;
+  var cursor = new Date(today() + "T00:00:00Z");
+  if (completions.indexOf(today()) === -1) cursor.setUTCDate(cursor.getUTCDate() - 1);
+  while (completions.indexOf(cursor.toISOString().slice(0, 10)) !== -1) { streak++; cursor.setUTCDate(cursor.getUTCDate() - 1); }
+  return { id: user.id, username: user.username, completed: completions.length, streak: streak, recent: completions.slice(0, 7) };
+}
+
+function hashPassword(password, salt, callback) {
+  crypto.scrypt(password, salt, 64, function (error, key) { callback(error, key && key.toString("hex")); });
+}
+
+app.post("/api/register", function (req, res) {
+  var username = String(req.body.username || "").trim();
+  var password = String(req.body.password || "");
+  if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: "Username must be 3-20 letters, numbers, or underscores." });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+  if (store.users.some(function (user) { return user.username.toLowerCase() === username.toLowerCase(); })) return res.status(409).json({ error: "That username is taken." });
+  var salt = crypto.randomBytes(16).toString("hex");
+  hashPassword(password, salt, function (error, hash) {
+    if (error) return res.status(500).json({ error: "Could not create account." });
+    var user = { id: crypto.randomUUID(), username: username, salt: salt, passwordHash: hash, createdAt: new Date().toISOString() };
+    store.users.push(user); saveStore(); setSession(res, user); res.status(201).json({ user: profile(user) });
+  });
+});
+
+app.post("/api/login", function (req, res) {
+  var user = store.users.find(function (item) { return item.username.toLowerCase() === String(req.body.username || "").trim().toLowerCase(); });
+  if (!user) return res.status(401).json({ error: "Incorrect username or password." });
+  hashPassword(String(req.body.password || ""), user.salt, function (error, hash) {
+    if (error || hash.length !== user.passwordHash.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(user.passwordHash))) return res.status(401).json({ error: "Incorrect username or password." });
+    setSession(res, user); res.json({ user: profile(user) });
+  });
+});
+
+app.post("/api/logout", function (_req, res) {
+  res.setHeader("Set-Cookie", "bc_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  res.status(204).end();
+});
+
+app.get("/api/me", function (req, res) {
+  var user = currentUser(req);
+  res.json({ user: user ? profile(user) : null, today: today() });
+});
+
+app.get("/api/puzzle/:date", requireUser, function (req, res) {
+  var puzzle = puzzleFor(req.params.date);
+  if (!puzzle || req.params.date > today()) return res.status(404).json({ error: "That puzzle is not available yet." });
+  var key = req.user.id + ":" + puzzle.date;
+  if (!store.games[key]) { store.games[key] = emptyState(); saveStore(); }
+  var state = store.games[key];
+  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId });
+});
+
+app.post("/api/puzzle/:date/action", requireUser, function (req, res) {
+  var puzzle = puzzleFor(req.params.date);
+  if (!puzzle || req.params.date > today()) return res.status(404).json({ error: "Puzzle not found." });
+  var key = req.user.id + ":" + puzzle.date;
+  var state = store.games[key] || emptyState();
+  if (state.completedAt) return res.status(409).json({ error: "This score is already verified." });
+  var node = game.flatten(puzzle.root).find(function (item) { return item.id === req.body.clueId; });
+  if (!node) return res.status(400).json({ error: "Unknown clue." });
+  var action = req.body.action;
+  if (action === "peek" && state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id);
+  else if (action === "reveal" && state.solved.indexOf(node.id) === -1) { if (state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id); state.revealed.push(node.id); state.solved.push(node.id); }
+  else if (action === "guess") {
+    var guess = game.normalize(req.body.guess);
+    if (!guess) return res.status(400).json({ error: "Enter an answer." });
+    if (guess === game.normalize(node.answer)) { if (state.solved.indexOf(node.id) === -1) state.solved.push(node.id); }
+    else if (state.wrong.indexOf(guess) === -1) state.wrong.push(guess);
+  } else if (action !== "guess" && action !== "peek" && action !== "reveal") return res.status(400).json({ error: "Unknown action." });
+
+  var allSolved = game.flatten(puzzle.root).every(function (item) { return state.solved.indexOf(item.id) !== -1; });
+  if (allSolved) {
+    state.completedAt = new Date().toISOString();
+    state.shareId = crypto.randomBytes(9).toString("base64url");
+    var finalScore = game.scoreFor(state);
+    store.shares[state.shareId] = { id: state.shareId, userId: req.user.id, username: req.user.username, date: puzzle.date, title: puzzle.title, score: finalScore, rank: game.rankFor(finalScore, state), completedAt: state.completedAt };
+  }
+  store.games[key] = state; saveStore();
+  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId, user: profile(req.user) });
+});
+
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g, function (char) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[char]; }); }
+
+app.get("/share/:id/card.svg", function (req, res) {
+  var share = store.shares[req.params.id];
+  if (!share) return res.status(404).end();
+  var rank = escapeHtml(share.rank), username = escapeHtml(share.username), score = escapeHtml(share.score);
+  res.type("image/svg+xml").set("Cache-Control", "public, max-age=31536000, immutable").send('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#f3eddf"/><rect x="42" y="42" width="1116" height="546" rx="24" fill="#172c27"/><text x="90" y="125" fill="#e9b44c" font-family="Georgia" font-size="32">BRACKET VERIFIED</text><text x="90" y="260" fill="#fffaf0" font-family="Georgia" font-size="76">'+username+'</text><text x="90" y="370" fill="#fffaf0" font-family="Arial" font-size="54">'+score+'/100  ·  '+rank+'</text><text x="90" y="520" fill="#a9beb7" font-family="Arial" font-size="28">Server-verified result</text></svg>');
+});
+
+app.get("/share/:id", function (req, res) {
+  var share = store.shares[req.params.id];
+  if (!share) return res.status(404).send("Result not found");
+  var origin = (process.env.PUBLIC_URL || (req.protocol + "://" + req.get("host"))).replace(/\/$/, "");
+  var title = share.username + " scored " + share.score + "/100 · " + share.rank;
+  var description = "Verified " + share.title + " result for " + share.date + ". Score recorded by Bracket Verified.";
+  res.set("Cache-Control", "public, max-age=31536000, immutable").send('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+escapeHtml(title)+'</title><meta name="description" content="'+escapeHtml(description)+'"><meta property="og:type" content="website"><meta property="og:site_name" content="Bracket Verified"><meta property="og:title" content="'+escapeHtml(title)+'"><meta property="og:description" content="'+escapeHtml(description)+'"><meta property="og:url" content="'+origin+'/share/'+share.id+'"><meta property="og:image" content="'+origin+'/share/'+share.id+'/card.svg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><link rel="stylesheet" href="/style.css"></head><body><main class="share-page"><p class="eyebrow">Verified result</p><section class="share-result"><div class="seal">✓</div><h1>'+escapeHtml(share.username)+'</h1><div class="share-score">'+share.score+'<span>/100</span></div><h2>'+escapeHtml(share.rank)+'</h2><p>'+escapeHtml(share.title)+' · '+share.date+'</p></section><a class="primary-link" href="/">Play today’s puzzle</a></main></body></html>');
+});
+
+app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+app.use(function (_req, res) { res.status(404).json({ error: "Not found." }); });
+
+if (require.main === module) app.listen(port, function () { console.log("Bracket Verified running at http://localhost:" + port); });
+module.exports = app;

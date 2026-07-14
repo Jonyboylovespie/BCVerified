@@ -1,0 +1,16 @@
+{
+  "name": "bracket-verified",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Daily nested clue puzzles with server-verified score sharing",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "express": "4.22.2"
+  }
+}

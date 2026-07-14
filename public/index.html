@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172c27">
+  <meta name="description" content="Daily nested clue puzzles with scores verified by the server.">
+  <title>Bracket Verified</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Bracket Verified home"><span>[</span> BRACKET<br>VERIFIED <span>]</span></a>
+    <div class="header-actions"><div id="mini-stats" class="mini-stats" hidden></div><button id="account-button" class="text-button">Sign in</button></div>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">The daily nested clue game</p>
+      <h1>No screenshots.<br><em>No score fiction.</em></h1>
+      <p>Play the brackets. Earn your rank. Share a result that was signed by the server, not typed into a group chat.</p>
+    </section>
+
+    <section id="game-shell" class="game-shell" hidden>
+      <div class="game-topline">
+        <button id="previous-day" class="date-nav" aria-label="Previous day">←</button>
+        <div><p id="puzzle-date" class="eyebrow"></p><h2 id="puzzle-title"></h2></div>
+        <button id="next-day" class="date-nav" aria-label="Next day">→</button>
+      </div>
+      <div class="score-strip"><span>Live score</span><strong id="score">100</strong><span id="rank">Puppet Master</span></div>
+      <div id="puzzle" class="puzzle" aria-live="polite"></div>
+      <div id="answer-panel" class="answer-panel" hidden>
+        <p id="active-clue"></p>
+        <form id="answer-form"><input id="answer-input" autocomplete="off" placeholder="Type your answer" aria-label="Answer"><button>Submit</button></form>
+        <div class="hint-actions"><button id="peek-button" class="text-button">Peek first letter <span>−5</span></button><button id="reveal-button" class="text-button">Reveal answer <span>−20 total</span></button></div>
+        <p id="game-message" class="message" role="status"></p>
+      </div>
+      <div id="complete-panel" class="complete-panel" hidden>
+        <p class="eyebrow">Result locked and verified</p><div class="final-score"><strong id="final-score"></strong><span>/100</span></div><h2 id="final-rank"></h2><p id="fact"></p>
+        <button id="share-button" class="primary-button">Share verified result</button><p id="share-help">On iPhone, choose Messages. The link preview carries your verified score.</p>
+      </div>
+    </section>
+
+    <section id="guest-panel" class="guest-panel">
+      <div><p class="eyebrow">Your record starts here</p><h2>One account.<br>Every bracket.</h2></div>
+      <div><p>Sign in to play today’s puzzle, preserve your streak, and create tamper-proof result links.</p><button id="guest-signin" class="primary-button">Create an account</button></div>
+    </section>
+  </main>
+
+  <dialog id="auth-dialog">
+    <button id="close-dialog" class="dialog-close" aria-label="Close">×</button>
+    <p class="eyebrow">Bracket Verified</p><h2 id="auth-title">Welcome back</h2>
+    <div class="auth-tabs"><button id="login-tab" class="active">Sign in</button><button id="register-tab">Create account</button></div>
+    <form id="auth-form"><label>Username<input id="username" required minlength="3" maxlength="20" autocomplete="username"></label><label>Password<input id="password" type="password" required minlength="8" autocomplete="current-password"></label><button id="auth-submit" class="primary-button">Sign in</button><p id="auth-error" class="message" role="alert"></p></form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>
