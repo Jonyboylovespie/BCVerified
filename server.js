@@ -1,9 +1,11 @@
+require("dotenv").config({ quiet: true });
+
 var express = require("express");
 var crypto = require("crypto");
 var fs = require("fs");
 var path = require("path");
 var game = require("./lib/game");
-var templates = require("./data/puzzles.json");
+var bracketCity = require("./lib/bracket-city");
 
 var app = express();
 var port = Number(process.env.PORT || 3000);
@@ -11,7 +13,7 @@ var secret = process.env.SESSION_SECRET || "dev-only-change-this-secret";
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required in production.");
 }
-var storePath = path.join(__dirname, "data", "store.json");
+var storePath = process.env.STORE_PATH || path.join(__dirname, "data", "store.json");
 var store = loadStore();
 
 app.disable("x-powered-by");
@@ -28,17 +30,10 @@ function saveStore() {
   fs.renameSync(temp, storePath);
 }
 
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() { return bracketCity.easternDate(); }
 
-function puzzleFor(date) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  var day = Math.floor(Date.parse(date + "T00:00:00Z") / 86400000);
-  var template = templates[((day % templates.length) + templates.length) % templates.length];
-  return { date: date, title: template.title, fact: template.fact, root: template.root };
-}
-
-function emptyState() {
-  return { solved: [], peeked: [], revealed: [], wrong: [], startedAt: new Date().toISOString(), completedAt: null, shareId: null };
+function emptyState(puzzle) {
+  return { puzzleId: puzzle.sourceId, solved: [], peeked: [], revealed: [], wrong: [], startedAt: new Date().toISOString(), completedAt: null, shareId: null };
 }
 
 function parseCookies(req) {
@@ -75,12 +70,20 @@ function requireUser(req, res, next) {
 }
 
 function profile(user) {
-  var completions = Object.keys(store.games).filter(function (key) { return key.indexOf(user.id + ":") === 0 && store.games[key].completedAt; }).map(function (key) { return key.split(":")[1]; }).sort().reverse();
-  var streak = 0;
-  var cursor = new Date(today() + "T00:00:00Z");
-  if (completions.indexOf(today()) === -1) cursor.setUTCDate(cursor.getUTCDate() - 1);
-  while (completions.indexOf(cursor.toISOString().slice(0, 10)) !== -1) { streak++; cursor.setUTCDate(cursor.getUTCDate() - 1); }
-  return { id: user.id, username: user.username, completed: completions.length, streak: streak, recent: completions.slice(0, 7) };
+  var completions = Object.keys(store.games).filter(function (key) {
+    return key.indexOf(user.id + ":") === 0 && store.games[key].completedAt;
+  }).map(function (key) { return store.games[key]; });
+  var scores = completions.map(game.scoreFor);
+  var puppetMasters = completions.filter(function (state) {
+    return game.rankFor(game.scoreFor(state), state) === "Puppet Master";
+  }).length;
+  return {
+    id: user.id,
+    username: user.username,
+    completed: completions.length,
+    averageScore: scores.length ? Math.round(scores.reduce(function (sum, score) { return sum + score; }, 0) / scores.length) : null,
+    puppetMasterPercent: scores.length ? Math.round(puppetMasters / scores.length * 100) : null
+  };
 }
 
 function hashPassword(password, salt, callback) {
@@ -117,26 +120,32 @@ app.post("/api/logout", function (_req, res) {
 
 app.get("/api/me", function (req, res) {
   var user = currentUser(req);
-  res.json({ user: user ? profile(user) : null, today: today() });
+  res.json({ user: user ? profile(user) : null, today: today(), startDate: bracketCity.startDate });
 });
 
-app.get("/api/puzzle/:date", requireUser, function (req, res) {
-  var puzzle = puzzleFor(req.params.date);
-  if (!puzzle || req.params.date > today()) return res.status(404).json({ error: "That puzzle is not available yet." });
+app.get("/api/puzzle/:date", requireUser, async function (req, res, next) {
+  try {
+  if (req.params.date > today()) return res.status(404).json({ error: "That puzzle is not available yet." });
+  var puzzle = await bracketCity.get(req.params.date);
+  if (!puzzle) return res.status(404).json({ error: "That puzzle is not available yet." });
   var key = req.user.id + ":" + puzzle.date;
-  if (!store.games[key]) { store.games[key] = emptyState(); saveStore(); }
+  if (!store.games[key] || store.games[key].puzzleId !== puzzle.sourceId) { store.games[key] = emptyState(puzzle); saveStore(); }
   var state = store.games[key];
   res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId });
+  } catch (error) { next(error); }
 });
 
-app.post("/api/puzzle/:date/action", requireUser, function (req, res) {
-  var puzzle = puzzleFor(req.params.date);
-  if (!puzzle || req.params.date > today()) return res.status(404).json({ error: "Puzzle not found." });
+app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next) {
+  try {
+  if (req.params.date > today()) return res.status(404).json({ error: "Puzzle not found." });
+  var puzzle = await bracketCity.get(req.params.date);
+  if (!puzzle) return res.status(404).json({ error: "Puzzle not found." });
   var key = req.user.id + ":" + puzzle.date;
-  var state = store.games[key] || emptyState();
+  var state = store.games[key] && store.games[key].puzzleId === puzzle.sourceId ? store.games[key] : emptyState(puzzle);
   if (state.completedAt) return res.status(409).json({ error: "This score is already verified." });
   var node = game.flatten(puzzle.root).find(function (item) { return item.id === req.body.clueId; });
   if (!node) return res.status(400).json({ error: "Unknown clue." });
+  if ((node.children || []).some(function (child) { return state.solved.indexOf(child.id) === -1; })) return res.status(409).json({ error: "Solve the nested clues first." });
   var action = req.body.action;
   if (action === "peek" && state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id);
   else if (action === "reveal" && state.solved.indexOf(node.id) === -1) { if (state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id); state.revealed.push(node.id); state.solved.push(node.id); }
@@ -156,6 +165,7 @@ app.post("/api/puzzle/:date/action", requireUser, function (req, res) {
   }
   store.games[key] = state; saveStore();
   res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId, user: profile(req.user) });
+  } catch (error) { next(error); }
 });
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, function (char) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[char]; }); }
@@ -164,7 +174,7 @@ app.get("/share/:id/card.svg", function (req, res) {
   var share = store.shares[req.params.id];
   if (!share) return res.status(404).end();
   var rank = escapeHtml(share.rank), username = escapeHtml(share.username), score = escapeHtml(share.score);
-  res.type("image/svg+xml").set("Cache-Control", "public, max-age=31536000, immutable").send('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#f3eddf"/><rect x="42" y="42" width="1116" height="546" rx="24" fill="#172c27"/><text x="90" y="125" fill="#e9b44c" font-family="Georgia" font-size="32">BRACKET VERIFIED</text><text x="90" y="260" fill="#fffaf0" font-family="Georgia" font-size="76">'+username+'</text><text x="90" y="370" fill="#fffaf0" font-family="Arial" font-size="54">'+score+'/100  ·  '+rank+'</text><text x="90" y="520" fill="#a9beb7" font-family="Arial" font-size="28">Server-verified result</text></svg>');
+  res.type("image/svg+xml").set("Cache-Control", "public, max-age=31536000, immutable").send('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#07519d"/><rect x="42" y="42" width="1116" height="546" fill="#0b5cad" stroke="#e7f3ff" stroke-width="4"/><text x="90" y="125" fill="#ffe871" font-family="Courier New" font-size="32">BRACKET VERIFIED / RECORD COPY</text><text x="90" y="260" fill="#e7f3ff" font-family="Courier New" font-size="76">'+username+'</text><text x="90" y="370" fill="#e7f3ff" font-family="Courier New" font-size="54">'+score+'/100  ·  '+rank+'</text><text x="90" y="520" fill="#9bc6e8" font-family="Courier New" font-size="28">SERVER-VERIFIED RESULT</text></svg>');
 });
 
 app.get("/share/:id", function (req, res) {
@@ -178,6 +188,11 @@ app.get("/share/:id", function (req, res) {
 
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 app.use(function (_req, res) { res.status(404).json({ error: "Not found." }); });
+app.use(function (error, _req, res, _next) { console.error(error); res.status(502).json({ error: "The daily puzzle could not be loaded." }); });
 
-if (require.main === module) app.listen(port, function () { console.log("Bracket Verified running at http://localhost:" + port); });
+if (require.main === module) {
+  bracketCity.importDate(today()).catch(function (error) { console.error("Daily puzzle sync failed:", error.message); });
+  setInterval(function () { bracketCity.importDate(today()).catch(function (error) { console.error("Daily puzzle sync failed:", error.message); }); }, 60 * 60 * 1000).unref();
+  app.listen(port, function () { console.log("Bracket Verified running at http://localhost:" + port); });
+}
 module.exports = app;

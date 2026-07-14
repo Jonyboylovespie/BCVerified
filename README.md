@@ -6,14 +6,23 @@ A daily nested-clue game with account progress and immutable, server-verified sh
 
 ```sh
 npm install
+cp .env.example .env
 npm start
 ```
 
-Open `http://localhost:3000`. Set `SESSION_SECRET` before deploying, and set `PUBLIC_URL` to the public HTTPS origin so iMessage crawlers receive absolute preview URLs.
+The server loads configuration from `.env`; existing environment variables take precedence. Open `http://localhost:3000`. Set a unique `SESSION_SECRET` before deploying, and set `PUBLIC_URL` to the public HTTPS origin so iMessage crawlers receive absolute preview URLs.
+
+`NODE_ENV` may be `development` or `production`. Generate a secure session secret with:
+
+```sh
+openssl rand -hex 32
+```
 
 ## Daily puzzles
 
-Original puzzle templates live in `data/puzzles.json` and rotate automatically, so a dated puzzle is available each day. Add licensed/original templates using the same recursive shape. The app intentionally does not scrape or republish The Atlantic's copyrighted puzzle feed.
+The server imports Bracket City's public dated puzzle JSON at startup and once an hour. Beginning July 14, 2026, each puzzle is cached under the gitignored `data/puzzles/YYYY-MM-DD.json` directory. Earlier archive dates are neither fetched nor saved. Dates use the `America/New_York` calendar so a puzzle is never filed under the wrong UTC day.
+
+Set `BRACKET_CITY_PUZZLE_URL` to override the upstream puzzle directory for mirrors, or `PUZZLE_START_DATE` to change the earliest allowed date. The importer validates the date and bracket/solution structure before atomically storing a file. Deployments need outbound HTTPS access and a persistent, writable `data/puzzles` directory if imported files must survive restarts.
 
 ## Verified sharing
 
