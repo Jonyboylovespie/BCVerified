@@ -158,7 +158,10 @@ app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next
     if (!node) return res.status(400).json({ error: "Unknown clue." });
     if (!ready(node)) return res.status(409).json({ error: "Solve the nested clues first." });
     if (action === "peek" && state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id);
-    else if (action === "reveal" && state.solved.indexOf(node.id) === -1) { if (state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id); state.revealed.push(node.id); state.solved.push(node.id); solvedClueId = node.id; }
+    else if (action === "reveal" && state.solved.indexOf(node.id) === -1) {
+      if (state.peeked.indexOf(node.id) === -1) return res.status(409).json({ error: "Peek before revealing." });
+      state.revealed.push(node.id); state.solved.push(node.id); solvedClueId = node.id;
+    }
   } else return res.status(400).json({ error: "Unknown action." });
 
   var allSolved = nodes.every(function (item) { return state.solved.indexOf(item.id) !== -1; });

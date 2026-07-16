@@ -42,7 +42,7 @@
     var wrap = document.createElement("span"); wrap.className="clue-wrap";
     if(node.synthetic){renderSegments(node.segments,wrap);return wrap;}
     if(node.solved){wrap.append(document.createTextNode(node.display));return wrap;}
-    if(node.ready){var button=document.createElement("button");button.className="clue-button"+(state.selected===node.id?" active":"");button.dataset.id=node.id;button.textContent="["+(node.display||node.clue)+"]";button.addEventListener("click",function(){selectClue(node.id);});wrap.append(button);}
+    if(node.ready){var button=document.createElement("button");button.className="clue-button"+(state.selected===node.id?" active":"");button.dataset.id=node.id;button.textContent=(node.peek?"("+node.peek+") ":"")+"["+node.clue+"]";button.addEventListener("click",function(){selectClue(node.id);});wrap.append(button);}
     else {wrap.append(document.createTextNode("["));renderSegments(node.segments,wrap);wrap.append(document.createTextNode("]"));}
     return wrap;
   }
@@ -53,8 +53,8 @@
     var show=!!(node&&button&&node.ready&&!node.solved&&!state.shareId);
     menu.hidden=!show;
     if(!show)return;
-    el("reveal-button").hidden=!!node.display;
-    el("peek-button").hidden=!!node.display;
+    el("reveal-button").hidden=!node.peek;
+    el("peek-button").hidden=!!node.peek;
     var rect=button.getBoundingClientRect();
     menu.style.left=(rect.left+rect.width/2)+"px";
     menu.style.top=(rect.top-8)+"px";
@@ -78,7 +78,7 @@
   el("logout-button").addEventListener("click",async function(){await api("/api/logout",{method:"POST"});location.reload();});
   el("guest-signin").addEventListener("click",function(){openAuth("register");});el("close-dialog").addEventListener("click",function(){el("auth-dialog").close();});el("login-tab").addEventListener("click",function(){setAuthMode("login");});el("register-tab").addEventListener("click",function(){setAuthMode("register");});
   el("auth-form").addEventListener("submit",async function(event){event.preventDefault();try{var data=await api("/api/"+state.authMode,{method:"POST",body:JSON.stringify({username:el("username").value,password:el("password").value})});updateUser(data.user);showScreen("play");el("auth-dialog").close();await loadPuzzle(state.date);}catch(error){el("auth-error").textContent=error.message;}});
-  el("answer-form").addEventListener("submit",function(event){event.preventDefault();var value=el("answer-input").value;el("answer-input").value="";action("guess",value);});el("peek-button").addEventListener("click",function(){action("peek");});el("reveal-button").addEventListener("click",function(){if(confirm("Reveal this answer? A peek and reveal cost 20 points total."))action("reveal");});
+  el("answer-form").addEventListener("submit",function(event){event.preventDefault();var value=el("answer-input").value;el("answer-input").value="";action("guess",value);});el("peek-button").addEventListener("click",function(){action("peek");});el("reveal-button").addEventListener("click",function(){action("reveal");});
   el("previous-day").addEventListener("click",function(){if(!el("previous-day").disabled)loadPuzzle(moveDate(-1));});el("next-day").addEventListener("click",function(){if(!el("next-day").disabled)loadPuzzle(moveDate(1));});window.addEventListener("resize",positionHintMenu);window.addEventListener("scroll",positionHintMenu,true);
   el("share-button").addEventListener("click",async function(){var url=location.origin+"/share/"+state.shareId;var text=state.user.username+" scored "+el("score").textContent+"/100 · "+el("rank").textContent;if(navigator.share){try{await navigator.share({title:"Bracket Verified",text:text,url:url});return;}catch(_){} }await navigator.clipboard.writeText(url);el("share-help").textContent="Verified link copied. Paste it into iMessage.";});
   boot().catch(function(){updateUser(null);});

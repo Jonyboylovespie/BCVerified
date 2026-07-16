@@ -38,9 +38,9 @@ main { width:min(1120px,calc(100% - 44px - var(--safe-left) - var(--safe-right))
 .clue-button.active { color:var(--paper); background:var(--gold); border-color:var(--gold); outline:2px solid var(--gold); outline-offset:3px; }
 .clue-button.solved { background:rgba(255,255,255,.17); }
 .child-clues { color:var(--muted); font-size:.78em; }
-.answer-panel { padding:30px clamp(25px,6vw,70px); border-top:1px solid var(--line); }
+.answer-panel { position:relative; min-height:156px; padding:30px clamp(25px,6vw,70px); display:flex; align-items:center; border-top:1px solid var(--line); }
 #active-clue { margin-top:0; font-size:20px; line-height:1.4; }
-#answer-form { display:flex; }
+#answer-form { width:100%; display:flex; transform:translateY(-5px); }
 #answer-input { min-width:0; flex:1; padding:12px 4px; background:transparent; border:0; border-bottom:2px solid var(--ink); outline:none; }
 #answer-input::placeholder { color:rgba(231,243,255,.65); }
 #answer-form button,.primary-button,.primary-link { display:inline-block; padding:15px 24px; color:var(--paper); background:var(--gold); border:0; font-weight:700; text-decoration:none; }
@@ -48,6 +48,7 @@ main { width:min(1120px,calc(100% - 44px - var(--safe-left) - var(--safe-right))
 .hint-actions { position:fixed; z-index:10; display:flex; gap:12px; padding:10px 14px; transform:translate(-50%,-100%); color:var(--ink); background:rgba(7,81,157,.98); border:1px solid var(--ink); font-size:12px; box-shadow:0 8px 18px rgba(2,35,69,.28); }
 .hint-actions span,.message { color:var(--gold); }
 .message { min-height:20px; font-size:13px; }
+#game-message { position:absolute; right:clamp(25px,6vw,70px); bottom:4px; left:clamp(25px,6vw,70px); margin:0; text-align:center; }
 .complete-panel { padding:52px 25px; text-align:center; border-top:1px solid var(--line); }
 .final-score { margin:20px 0 0; }
 .final-score strong { font-size:92px; font-weight:400; line-height:1; }
