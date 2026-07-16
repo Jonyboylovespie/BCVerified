@@ -143,20 +143,25 @@ app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next
   var key = req.user.id + ":" + puzzle.date;
   var state = store.games[key] && store.games[key].puzzleId === puzzle.sourceId ? store.games[key] : emptyState(puzzle);
   if (state.completedAt) return res.status(409).json({ error: "This score is already verified." });
-  var node = game.flatten(puzzle.root).find(function (item) { return item.id === req.body.clueId; });
-  if (!node) return res.status(400).json({ error: "Unknown clue." });
-  if ((node.children || []).some(function (child) { return state.solved.indexOf(child.id) === -1; })) return res.status(409).json({ error: "Solve the nested clues first." });
   var action = req.body.action;
-  if (action === "peek" && state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id);
-  else if (action === "reveal" && state.solved.indexOf(node.id) === -1) { if (state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id); state.revealed.push(node.id); state.solved.push(node.id); }
-  else if (action === "guess") {
+  var nodes = game.flatten(puzzle.root);
+  var solvedClueId = null;
+  function ready(node) { return (node.children || []).every(function (child) { return child.synthetic || state.solved.indexOf(child.id) !== -1; }); }
+  if (action === "guess") {
     var guess = game.normalize(req.body.guess);
     if (!guess) return res.status(400).json({ error: "Enter an answer." });
-    if (guess === game.normalize(node.answer)) { if (state.solved.indexOf(node.id) === -1) state.solved.push(node.id); }
+    var match = nodes.find(function (item) { return state.solved.indexOf(item.id) === -1 && ready(item) && guess === game.normalize(item.answer); });
+    if (match) { state.solved.push(match.id); solvedClueId = match.id; }
     else if (state.wrong.indexOf(guess) === -1) state.wrong.push(guess);
-  } else if (action !== "guess" && action !== "peek" && action !== "reveal") return res.status(400).json({ error: "Unknown action." });
+  } else if (action === "peek" || action === "reveal") {
+    var node = nodes.find(function (item) { return item.id === req.body.clueId; });
+    if (!node) return res.status(400).json({ error: "Unknown clue." });
+    if (!ready(node)) return res.status(409).json({ error: "Solve the nested clues first." });
+    if (action === "peek" && state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id);
+    else if (action === "reveal" && state.solved.indexOf(node.id) === -1) { if (state.peeked.indexOf(node.id) === -1) state.peeked.push(node.id); state.revealed.push(node.id); state.solved.push(node.id); solvedClueId = node.id; }
+  } else return res.status(400).json({ error: "Unknown action." });
 
-  var allSolved = game.flatten(puzzle.root).every(function (item) { return state.solved.indexOf(item.id) !== -1; });
+  var allSolved = nodes.every(function (item) { return state.solved.indexOf(item.id) !== -1; });
   if (allSolved) {
     state.completedAt = new Date().toISOString();
     state.shareId = crypto.randomBytes(9).toString("base64url");
@@ -164,7 +169,7 @@ app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next
     store.shares[state.shareId] = { id: state.shareId, userId: req.user.id, username: req.user.username, date: puzzle.date, title: puzzle.title, score: finalScore, rank: game.rankFor(finalScore, state), completedAt: state.completedAt };
   }
   store.games[key] = state; saveStore();
-  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId, user: profile(req.user) });
+  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId, solvedClueId: solvedClueId, user: profile(req.user) });
   } catch (error) { next(error); }
 });
 

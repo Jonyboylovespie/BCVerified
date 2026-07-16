@@ -42,21 +42,33 @@
     var wrap = document.createElement("span"); wrap.className="clue-wrap";
     if(node.synthetic){renderSegments(node.segments,wrap);return wrap;}
     if(node.solved){wrap.append(document.createTextNode(node.display));return wrap;}
-    wrap.append(document.createTextNode("["));
-    if(node.ready){var button=document.createElement("button");button.className="clue-button"+(state.selected===node.id?" active":"");button.dataset.id=node.id;button.textContent=node.display||node.clue;button.addEventListener("click",function(){selectClue(node.id);});wrap.append(button);}
-    else renderSegments(node.segments,wrap);
-    wrap.append(document.createTextNode("]"));return wrap;
+    if(node.ready){var button=document.createElement("button");button.className="clue-button"+(state.selected===node.id?" active":"");button.dataset.id=node.id;button.textContent="["+(node.display||node.clue)+"]";button.addEventListener("click",function(){selectClue(node.id);});wrap.append(button);}
+    else {wrap.append(document.createTextNode("["));renderSegments(node.segments,wrap);wrap.append(document.createTextNode("]"));}
+    return wrap;
   }
-  function selectClue(id) { state.selected=id; var node=findNode(state.puzzle.root,id); if(!node.ready)return; el("answer-panel").hidden=node.solved||!!state.shareId; el("active-clue").textContent=node.clue; el("reveal-button").hidden=!!node.display; el("peek-button").hidden=!!node.display; el("game-message").textContent=""; render(); if(!node.solved)setTimeout(function(){el("answer-input").focus();},0); }
+  function positionHintMenu() {
+    var menu=el("hint-actions");
+    var node=state.selected&&findNode(state.puzzle.root,state.selected);
+    var button=state.selected&&document.querySelector('.clue-button[data-id="'+state.selected+'"]');
+    var show=!!(node&&button&&node.ready&&!node.solved&&!state.shareId);
+    menu.hidden=!show;
+    if(!show)return;
+    el("reveal-button").hidden=!!node.display;
+    el("peek-button").hidden=!!node.display;
+    var rect=button.getBoundingClientRect();
+    menu.style.left=(rect.left+rect.width/2)+"px";
+    menu.style.top=(rect.top-8)+"px";
+  }
+  function selectClue(id) { state.selected=state.selected===id?null:id; el("game-message").textContent=""; render(); setTimeout(positionHintMenu,0); }
   function render(data) {
     if(data){state.puzzle=data.puzzle;state.shareId=data.shareId;el("score").textContent=data.score;el("rank").textContent=data.rank;if(data.user)updateUser(data.user);}
     el("puzzle-date").textContent=formatDate(state.puzzle.date);el("puzzle-title").textContent=state.puzzle.title;el("previous-day").disabled=state.date<=state.startDate;el("next-day").disabled=state.date>=state.today;
     var puzzle=el("puzzle");puzzle.innerHTML="";puzzle.append(renderNode(state.puzzle.root));
-    el("complete-panel").hidden=!state.shareId;el("answer-panel").hidden=!!state.shareId||!state.selected;
+    el("complete-panel").hidden=!state.shareId;el("answer-panel").hidden=!!state.shareId;positionHintMenu();
     if(state.shareId){el("final-score").textContent=data?data.score:el("score").textContent;el("final-rank").textContent=data?data.rank:el("rank").textContent;el("fact").textContent=state.puzzle.fact;}
   }
   async function loadPuzzle(date){state.date=date;state.selected=null;try{render(await api("/api/puzzle/"+date));}catch(error){el("game-message").textContent=error.message;}}
-  async function action(type,guess){try{var data=await api("/api/puzzle/"+state.date+"/action",{method:"POST",body:JSON.stringify({action:type,clueId:state.selected,guess:guess})});if(type==="guess"&&!findNode(data.puzzle.root,state.selected).solved)el("game-message").textContent="Not quite. Two points deducted.";else el("game-message").textContent="";render(data);}catch(error){el("game-message").textContent=error.message;}}
+  async function action(type,guess){try{var payload={action:type,guess:guess};if(type!=="guess")payload.clueId=state.selected;var data=await api("/api/puzzle/"+state.date+"/action",{method:"POST",body:JSON.stringify(payload)});if(type==="guess"&&!data.solvedClueId)el("game-message").textContent="Not quite. Two points deducted.";else el("game-message").textContent="";render(data);}catch(error){el("game-message").textContent=error.message;}}
   function openAuth(mode){state.authMode=mode||"login";el("auth-dialog").showModal();setAuthMode(state.authMode);}
   function setAuthMode(mode){state.authMode=mode;var login=mode==="login";el("login-tab").classList.toggle("active",login);el("register-tab").classList.toggle("active",!login);el("auth-title").textContent=login?"Welcome back":"Claim your record";el("auth-submit").textContent=login?"Sign in":"Create account";el("password").autocomplete=login?"current-password":"new-password";el("auth-error").textContent="";}
   async function boot(){var data=await api("/api/me");state.date=data.today;state.today=data.today;state.startDate=data.startDate;updateUser(data.user);showScreen("play");if(data.user)await loadPuzzle(data.today);}
@@ -67,7 +79,7 @@
   el("guest-signin").addEventListener("click",function(){openAuth("register");});el("close-dialog").addEventListener("click",function(){el("auth-dialog").close();});el("login-tab").addEventListener("click",function(){setAuthMode("login");});el("register-tab").addEventListener("click",function(){setAuthMode("register");});
   el("auth-form").addEventListener("submit",async function(event){event.preventDefault();try{var data=await api("/api/"+state.authMode,{method:"POST",body:JSON.stringify({username:el("username").value,password:el("password").value})});updateUser(data.user);showScreen("play");el("auth-dialog").close();await loadPuzzle(state.date);}catch(error){el("auth-error").textContent=error.message;}});
   el("answer-form").addEventListener("submit",function(event){event.preventDefault();var value=el("answer-input").value;el("answer-input").value="";action("guess",value);});el("peek-button").addEventListener("click",function(){action("peek");});el("reveal-button").addEventListener("click",function(){if(confirm("Reveal this answer? A peek and reveal cost 20 points total."))action("reveal");});
-  el("previous-day").addEventListener("click",function(){if(!el("previous-day").disabled)loadPuzzle(moveDate(-1));});el("next-day").addEventListener("click",function(){if(!el("next-day").disabled)loadPuzzle(moveDate(1));});
+  el("previous-day").addEventListener("click",function(){if(!el("previous-day").disabled)loadPuzzle(moveDate(-1));});el("next-day").addEventListener("click",function(){if(!el("next-day").disabled)loadPuzzle(moveDate(1));});window.addEventListener("resize",positionHintMenu);window.addEventListener("scroll",positionHintMenu,true);
   el("share-button").addEventListener("click",async function(){var url=location.origin+"/share/"+state.shareId;var text=state.user.username+" scored "+el("score").textContent+"/100 · "+el("rank").textContent;if(navigator.share){try{await navigator.share({title:"Bracket Verified",text:text,url:url});return;}catch(_){} }await navigator.clipboard.writeText(url);el("share-help").textContent="Verified link copied. Paste it into iMessage.";});
   boot().catch(function(){updateUser(null);});
 })();
