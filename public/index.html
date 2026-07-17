@@ -13,6 +13,7 @@
     <a class="brand" href="/" aria-label="Bracket Verified home"><span>[</span> BRACKET<br>VERIFIED <span>]</span></a>
     <nav class="header-actions" aria-label="Primary navigation">
       <button id="play-button" class="nav-button" hidden>Play</button>
+      <button id="leaderboard-button" class="nav-button" hidden>Leaderboard</button>
       <button id="account-button" class="nav-button">Sign in</button>
     </nav>
   </header>
@@ -48,6 +49,29 @@
         <div><p>Sign in to play and create tamper-proof result links.</p><button id="guest-signin" class="primary-button">Create an account</button></div>
       </section>
     </div>
+
+    <section id="leaderboard-screen" class="leaderboard-screen" hidden>
+      <div class="leaderboard-heading">
+        <div>
+          <p class="eyebrow">Daily standings</p>
+          <h1>Leaderboard</h1>
+        </div>
+        <p>Every verified finish ranked by score.</p>
+      </div>
+      <div class="leaderboard-board">
+        <div class="leaderboard-date-nav">
+          <button id="leaderboard-previous-day" class="date-nav" aria-label="Previous leaderboard day">←</button>
+          <div>
+            <p id="leaderboard-date-label" class="eyebrow"></p>
+            <h2 id="leaderboard-title">Bracket City</h2>
+          </div>
+          <button id="leaderboard-next-day" class="date-nav" aria-label="Next leaderboard day">→</button>
+        </div>
+        <div class="leaderboard-columns" aria-hidden="true"><span>Place</span><span>Player</span><span>Rank</span><span>Score</span></div>
+        <div id="leaderboard-list" class="leaderboard-list" role="list" aria-live="polite"></div>
+        <p id="leaderboard-message" class="leaderboard-message" role="status"></p>
+      </div>
+    </section>
 
     <section id="profile-screen" class="profile-screen" hidden>
       <p class="eyebrow">Player profile</p>

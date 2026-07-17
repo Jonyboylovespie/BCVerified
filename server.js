@@ -123,6 +123,50 @@ app.get("/api/me", function (req, res) {
   res.json({ user: user ? profile(user) : null, today: today(), startDate: bracketCity.startDate });
 });
 
+app.get("/api/leaderboard/:date", requireUser, function (req, res) {
+  var date = req.params.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < bracketCity.startDate || date > today()) {
+    return res.status(404).json({ error: "That leaderboard is not available." });
+  }
+  var usersById = store.users.reduce(function (result, user) {
+    result[user.id] = user;
+    return result;
+  }, {});
+  var entries = Object.keys(store.games).filter(function (key) {
+    var separator = key.indexOf(":");
+    return separator !== -1 && key.slice(separator + 1) === date && store.games[key].completedAt;
+  }).map(function (key) {
+    var userId = key.slice(0, key.indexOf(":"));
+    var state = store.games[key];
+    var score = game.scoreFor(state);
+    return {
+      userId: userId,
+      username: usersById[userId] ? usersById[userId].username : "Former player",
+      score: score,
+      rank: game.rankFor(score, state),
+      completedAt: state.completedAt
+    };
+  }).sort(function (left, right) {
+    return right.score - left.score || left.completedAt.localeCompare(right.completedAt) || left.username.localeCompare(right.username);
+  });
+  var previousScore = null;
+  var previousPlace = 0;
+  res.json({
+    date: date,
+    entries: entries.map(function (entry, index) {
+      if (entry.score !== previousScore) previousPlace = index + 1;
+      previousScore = entry.score;
+      return {
+        place: previousPlace,
+        username: entry.username,
+        score: entry.score,
+        rank: entry.rank,
+        isCurrentUser: entry.userId === req.user.id
+      };
+    })
+  });
+});
+
 app.get("/api/puzzle/:date", requireUser, async function (req, res, next) {
   try {
   if (req.params.date > today()) return res.status(404).json({ error: "That puzzle is not available yet." });
