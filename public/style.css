@@ -93,6 +93,7 @@ main { width:min(1120px,calc(100% - 44px - var(--safe-left) - var(--safe-right))
 .leaderboard-rank { color:var(--muted); font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
 .leaderboard-score { font-size:32px; font-weight:400; }
 .leaderboard-message { min-height:86px; margin:0; padding:34px 24px; color:var(--muted); text-align:center; }
+.leaderboard-message:empty { display:none; }
 dialog { width:min(450px,calc(100% - 30px - var(--safe-left) - var(--safe-right))); max-height:calc(100vh - 30px); max-height:calc(100dvh - 30px); padding:42px; overflow-y:auto; overscroll-behavior:contain; color:var(--ink); background:rgba(7,81,157,.96); border:2px solid var(--ink); box-shadow:none; }
 dialog::backdrop { background:rgba(2,35,69,.8); }
 .dialog-close { position:absolute; top:8px; right:8px; width:44px; height:44px; padding:0; border:0; background:none; font-size:27px; }
