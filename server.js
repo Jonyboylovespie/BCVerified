@@ -181,15 +181,15 @@ function escapeHtml(value) { return String(value).replace(/[&<>"']/g, function (
 app.get("/share/:id/card.svg", function (req, res) {
   var share = store.shares[req.params.id];
   if (!share) return res.status(404).end();
-  var rank = escapeHtml(share.rank), username = escapeHtml(share.username), score = escapeHtml(share.score);
-  res.type("image/svg+xml").set("Cache-Control", "public, max-age=31536000, immutable").send('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#07519d"/><rect x="42" y="42" width="1116" height="546" fill="#0b5cad" stroke="#e7f3ff" stroke-width="4"/><text x="90" y="125" fill="#ffe871" font-family="Courier New" font-size="32">BRACKET VERIFIED / RECORD COPY</text><text x="90" y="260" fill="#e7f3ff" font-family="Courier New" font-size="76">'+username+'</text><text x="90" y="370" fill="#e7f3ff" font-family="Courier New" font-size="54">'+score+'/100  ·  '+rank+'</text><text x="90" y="520" fill="#9bc6e8" font-family="Courier New" font-size="28">SERVER-VERIFIED RESULT</text></svg>');
+  var rank = escapeHtml(share.rank), username = escapeHtml(share.username), score = escapeHtml(share.score), date = escapeHtml(share.date);
+  res.type("image/svg+xml").set("Cache-Control", "public, max-age=31536000, immutable").send('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#07519d"/><rect x="42" y="42" width="1116" height="546" fill="#0b5cad" stroke="#e7f3ff" stroke-width="4"/><text x="90" y="125" fill="#ffe871" font-family="Courier New" font-size="32">BRACKET VERIFIED / RECORD COPY</text><text x="90" y="260" fill="#e7f3ff" font-family="Courier New" font-size="76">'+username+'</text><text x="90" y="370" fill="#e7f3ff" font-family="Courier New" font-size="54">'+score+'/100  ·  '+rank+'  ·  '+date+'</text><text x="90" y="520" fill="#9bc6e8" font-family="Courier New" font-size="28">SERVER-VERIFIED RESULT</text></svg>');
 });
 
 app.get("/share/:id", function (req, res) {
   var share = store.shares[req.params.id];
   if (!share) return res.status(404).send("Result not found");
   var origin = (process.env.PUBLIC_URL || (req.protocol + "://" + req.get("host"))).replace(/\/$/, "");
-  var title = share.username + " scored " + share.score + "/100 · " + share.rank;
+  var title = share.username + " scored (" + share.score + "/100) · " + share.rank + " · " + share.date;
   var description = "Verified " + share.title + " result for " + share.date + ". Score recorded by Bracket Verified.";
   res.set("Cache-Control", "public, max-age=31536000, immutable").send('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+escapeHtml(title)+'</title><meta name="description" content="'+escapeHtml(description)+'"><meta property="og:type" content="website"><meta property="og:site_name" content="Bracket Verified"><meta property="og:title" content="'+escapeHtml(title)+'"><meta property="og:description" content="'+escapeHtml(description)+'"><meta property="og:url" content="'+origin+'/share/'+share.id+'"><meta property="og:image" content="'+origin+'/share/'+share.id+'/card.svg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><link rel="stylesheet" href="/style.css"></head><body><main class="share-page"><p class="eyebrow">Verified result</p><section class="share-result"><div class="seal">✓</div><h1>'+escapeHtml(share.username)+'</h1><div class="share-score">'+share.score+'<span>/100</span></div><h2>'+escapeHtml(share.rank)+'</h2><p>'+escapeHtml(share.title)+' · '+share.date+'</p></section><a class="primary-link" href="/">Play today’s puzzle</a></main></body></html>');
 });
