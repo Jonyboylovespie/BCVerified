@@ -1,5 +1,5 @@
 (function () {
-  var state = { user: null, date: null, leaderboardDate: null, today: null, startDate: null, puzzle: null, selected: null, shareId: null, authMode: "login" };
+  var state = { user: null, date: null, leaderboardDate: null, today: null, startDate: null, puzzle: null, selected: null, shareId: null, authMode: "login", perfectInputDisqualified: false, perfectInputSync: null };
   var el = function (id) { return document.getElementById(id); };
 
   async function api(url, options) {
@@ -109,14 +109,19 @@
   }
   function selectClue(id) { state.selected=state.selected===id?null:id; el("game-message").textContent=""; render(); setTimeout(positionHintMenu,0); }
   function render(data) {
-    if(data){state.puzzle=data.puzzle;state.shareId=data.shareId;el("score").textContent=data.score;el("rank").textContent=data.rank;if(data.user)updateUser(data.user);}
+    if(data){state.puzzle=data.puzzle;state.shareId=data.shareId;state.perfectInputDisqualified=data.puppetMasterEligible===false;el("score").textContent=data.score;el("rank").textContent=data.rank;if(data.user)updateUser(data.user);}
     el("puzzle-date").textContent=formatDate(state.puzzle.date);el("puzzle-title").textContent=state.puzzle.title;el("previous-day").disabled=state.date<=state.startDate;el("next-day").disabled=state.date>=state.today;
     var puzzle=el("puzzle");puzzle.innerHTML="";puzzle.append(renderNode(state.puzzle.root));
     el("complete-panel").hidden=!state.shareId;el("answer-panel").hidden=!!state.shareId;positionHintMenu();
     if(state.shareId){el("final-score").textContent=data?data.score:el("score").textContent;el("final-rank").textContent=data?data.rank:el("rank").textContent;el("fact").textContent=state.puzzle.fact;}
   }
   async function loadPuzzle(date){state.date=date;state.selected=null;try{render(await api("/api/puzzle/"+date));}catch(error){el("game-message").textContent=error.message;}}
-  async function action(type,guess){try{var payload={action:type,guess:guess};if(type!=="guess")payload.clueId=state.selected;var data=await api("/api/puzzle/"+state.date+"/action",{method:"POST",body:JSON.stringify(payload)});if(type==="guess"&&!data.solvedClueId)el("game-message").textContent="Not quite. Two points deducted.";else el("game-message").textContent="";render(data);}catch(error){el("game-message").textContent=error.message;}}
+  async function action(type,guess){try{var payload={action:type,guess:guess};if(type==="guess")payload.perfectKeystrokes=!state.perfectInputDisqualified;else payload.clueId=state.selected;var data=await api("/api/puzzle/"+state.date+"/action",{method:"POST",body:JSON.stringify(payload)});if(type==="guess"&&!data.solvedClueId)el("game-message").textContent="Not quite. Two points deducted.";else el("game-message").textContent="";render(data);return data;}catch(error){el("game-message").textContent=error.message;}}
+  function disqualifyPerfectInput() {
+    if(state.perfectInputDisqualified||state.shareId)return;
+    state.perfectInputDisqualified=true;
+    state.perfectInputSync=action("disqualifyPerfect");
+  }
   function openAuth(mode){state.authMode=mode||"login";el("auth-dialog").showModal();setAuthMode(state.authMode);}
   function setAuthMode(mode){state.authMode=mode;var login=mode==="login";el("login-tab").classList.toggle("active",login);el("register-tab").classList.toggle("active",!login);el("auth-title").textContent=login?"Welcome back":"Claim your record";el("auth-submit").textContent=login?"Sign in":"Create account";el("password").autocomplete=login?"current-password":"new-password";el("auth-error").textContent="";}
   async function boot(){var data=await api("/api/me");state.date=data.today;state.leaderboardDate=data.today;state.today=data.today;state.startDate=data.startDate;updateUser(data.user);showScreen("play");if(data.user)await loadPuzzle(data.today);}
@@ -127,7 +132,10 @@
   el("logout-button").addEventListener("click",async function(){await api("/api/logout",{method:"POST"});location.reload();});
   el("guest-signin").addEventListener("click",function(){openAuth("register");});el("close-dialog").addEventListener("click",function(){el("auth-dialog").close();});el("login-tab").addEventListener("click",function(){setAuthMode("login");});el("register-tab").addEventListener("click",function(){setAuthMode("register");});
   el("auth-form").addEventListener("submit",async function(event){event.preventDefault();try{var data=await api("/api/"+state.authMode,{method:"POST",body:JSON.stringify({username:el("username").value,password:el("password").value})});updateUser(data.user);showScreen("play");el("auth-dialog").close();await loadPuzzle(state.date);}catch(error){el("auth-error").textContent=error.message;}});
-  el("answer-form").addEventListener("submit",function(event){event.preventDefault();var value=el("answer-input").value;el("answer-input").value="";action("guess",value);});el("peek-button").addEventListener("click",function(){action("peek");});el("reveal-button").addEventListener("click",function(){action("reveal");});
+  el("answer-form").addEventListener("submit",async function(event){event.preventDefault();var value=el("answer-input").value;el("answer-input").value="";if(state.perfectInputSync)await state.perfectInputSync;action("guess",value);});el("peek-button").addEventListener("click",function(){action("peek");});el("reveal-button").addEventListener("click",function(){action("reveal");});
+  el("answer-input").addEventListener("keydown",function(event){if(event.key==="Backspace"||event.key==="Delete")disqualifyPerfectInput();});
+  el("answer-input").addEventListener("beforeinput",function(event){var replacing=event.inputType.indexOf("insert")===0&&this.selectionStart!==this.selectionEnd;if(event.inputType.indexOf("delete")===0||event.inputType==="historyUndo"||event.inputType==="historyRedo"||event.inputType==="insertFromPaste"||event.inputType==="insertFromDrop"||event.inputType==="insertReplacementText"||replacing)disqualifyPerfectInput();});
+  el("answer-input").addEventListener("cut",disqualifyPerfectInput);el("answer-input").addEventListener("paste",disqualifyPerfectInput);el("answer-input").addEventListener("drop",disqualifyPerfectInput);
   el("previous-day").addEventListener("click",function(){if(!el("previous-day").disabled)loadPuzzle(moveDate(state.date,-1));});el("next-day").addEventListener("click",function(){if(!el("next-day").disabled)loadPuzzle(moveDate(state.date,1));});
   el("leaderboard-previous-day").addEventListener("click",function(){if(!el("leaderboard-previous-day").disabled)loadLeaderboard(moveDate(state.leaderboardDate,-1));});el("leaderboard-next-day").addEventListener("click",function(){if(!el("leaderboard-next-day").disabled)loadLeaderboard(moveDate(state.leaderboardDate,1));});window.addEventListener("resize",positionHintMenu);window.addEventListener("scroll",positionHintMenu,true);
   el("share-button").addEventListener("click",async function(){var url=location.origin+"/share/"+state.shareId;var text=state.user.username+" scored ("+el("score").textContent+"/100) · "+el("rank").textContent+" · "+state.puzzle.date;if(navigator.share){try{await navigator.share({title:"Bracket Verified",text:text,url:url});return;}catch(_){} }await navigator.clipboard.writeText(url);el("share-help").textContent="Verified link copied. Paste it into iMessage.";});

@@ -33,7 +33,7 @@ function saveStore() {
 function today() { return bracketCity.easternDate(); }
 
 function emptyState(puzzle) {
-  return { puzzleId: puzzle.sourceId, solved: [], peeked: [], revealed: [], wrong: [], startedAt: new Date().toISOString(), completedAt: null, shareId: null };
+  return { puzzleId: puzzle.sourceId, solved: [], peeked: [], revealed: [], wrong: [], perfectKeystrokes: true, startedAt: new Date().toISOString(), completedAt: null, shareId: null };
 }
 
 function parseCookies(req) {
@@ -147,17 +147,14 @@ app.get("/api/leaderboard/:date", requireUser, function (req, res) {
       completedAt: state.completedAt
     };
   }).sort(function (left, right) {
-    return right.score - left.score || left.completedAt.localeCompare(right.completedAt) || left.username.localeCompare(right.username);
+    var rankDifference = Number(right.rank === "Puppet Master") - Number(left.rank === "Puppet Master");
+    return right.score - left.score || rankDifference || left.completedAt.localeCompare(right.completedAt) || left.username.localeCompare(right.username);
   });
-  var previousScore = null;
-  var previousPlace = 0;
   res.json({
     date: date,
     entries: entries.map(function (entry, index) {
-      if (entry.score !== previousScore) previousPlace = index + 1;
-      previousScore = entry.score;
       return {
-        place: previousPlace,
+        place: index + 1,
         username: entry.username,
         score: entry.score,
         rank: entry.rank,
@@ -175,7 +172,7 @@ app.get("/api/puzzle/:date", requireUser, async function (req, res, next) {
   var key = req.user.id + ":" + puzzle.date;
   if (!store.games[key] || store.games[key].puzzleId !== puzzle.sourceId) { store.games[key] = emptyState(puzzle); saveStore(); }
   var state = store.games[key];
-  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId });
+  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), puppetMasterEligible: state.perfectKeystrokes !== false, shareId: state.shareId });
   } catch (error) { next(error); }
 });
 
@@ -192,11 +189,14 @@ app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next
   var solvedClueId = null;
   function ready(node) { return (node.children || []).every(function (child) { return child.synthetic || state.solved.indexOf(child.id) !== -1; }); }
   if (action === "guess") {
+    if (req.body.perfectKeystrokes === false) state.perfectKeystrokes = false;
     var guess = game.normalize(req.body.guess);
     if (!guess) return res.status(400).json({ error: "Enter an answer." });
     var match = nodes.find(function (item) { return state.solved.indexOf(item.id) === -1 && ready(item) && guess === game.normalize(item.answer); });
     if (match) { state.solved.push(match.id); solvedClueId = match.id; }
     else if (state.wrong.indexOf(guess) === -1) state.wrong.push(guess);
+  } else if (action === "disqualifyPerfect") {
+    state.perfectKeystrokes = false;
   } else if (action === "peek" || action === "reveal") {
     var node = nodes.find(function (item) { return item.id === req.body.clueId; });
     if (!node) return res.status(400).json({ error: "Unknown clue." });
@@ -216,7 +216,7 @@ app.post("/api/puzzle/:date/action", requireUser, async function (req, res, next
     store.shares[state.shareId] = { id: state.shareId, userId: req.user.id, username: req.user.username, date: puzzle.date, title: puzzle.title, score: finalScore, rank: game.rankFor(finalScore, state), completedAt: state.completedAt };
   }
   store.games[key] = state; saveStore();
-  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), shareId: state.shareId, solvedClueId: solvedClueId, user: profile(req.user) });
+  res.json({ puzzle: game.publicPuzzle(puzzle, state), score: game.scoreFor(state), rank: game.rankFor(game.scoreFor(state), state), puppetMasterEligible: state.perfectKeystrokes !== false, shareId: state.shareId, solvedClueId: solvedClueId, user: profile(req.user) });
   } catch (error) { next(error); }
 });
 
