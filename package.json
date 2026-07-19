@@ -4,7 +4,8 @@
   "private": true,
   "description": "Daily nested clue puzzles with server-verified score sharing",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "set-password": "node scripts/set-password.js"
   },
   "engines": {
     "node": ">=16"

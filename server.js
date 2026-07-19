@@ -6,6 +6,7 @@ var fs = require("fs");
 var path = require("path");
 var game = require("./lib/game");
 var bracketCity = require("./lib/bracket-city");
+var passwords = require("./lib/password");
 
 var app = express();
 var port = Number(process.env.PORT || 3000);
@@ -54,12 +55,14 @@ function currentUser(req) {
   try {
     var payload = JSON.parse(Buffer.from(pieces[0], "base64url").toString());
     if (payload.exp < Date.now()) return null;
-    return store.users.find(function (user) { return user.id === payload.id; }) || null;
+    var user = store.users.find(function (item) { return item.id === payload.id; }) || null;
+    if (!user || Number(payload.sessionVersion || 0) !== Number(user.sessionVersion || 0)) return null;
+    return user;
   } catch (_) { return null; }
 }
 
 function setSession(res, user) {
-  var payload = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 30 * 86400000 })).toString("base64url");
+  var payload = Buffer.from(JSON.stringify({ id: user.id, sessionVersion: Number(user.sessionVersion || 0), exp: Date.now() + 30 * 86400000 })).toString("base64url");
   res.setHeader("Set-Cookie", "bc_session=" + payload + "." + sign(payload) + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000" + (process.env.NODE_ENV === "production" ? "; Secure" : ""));
 }
 
@@ -86,18 +89,14 @@ function profile(user) {
   };
 }
 
-function hashPassword(password, salt, callback) {
-  crypto.scrypt(password, salt, 64, function (error, key) { callback(error, key && key.toString("hex")); });
-}
-
 app.post("/api/register", function (req, res) {
   var username = String(req.body.username || "").trim();
   var password = String(req.body.password || "");
   if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: "Username must be 3-20 letters, numbers, or underscores." });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+  if (password.length < passwords.minimumLength) return res.status(400).json({ error: "Password must be at least " + passwords.minimumLength + " characters." });
   if (store.users.some(function (user) { return user.username.toLowerCase() === username.toLowerCase(); })) return res.status(409).json({ error: "That username is taken." });
   var salt = crypto.randomBytes(16).toString("hex");
-  hashPassword(password, salt, function (error, hash) {
+  passwords.hash(password, salt, function (error, hash) {
     if (error) return res.status(500).json({ error: "Could not create account." });
     var user = { id: crypto.randomUUID(), username: username, salt: salt, passwordHash: hash, createdAt: new Date().toISOString() };
     store.users.push(user); saveStore(); setSession(res, user); res.status(201).json({ user: profile(user) });
@@ -107,7 +106,7 @@ app.post("/api/register", function (req, res) {
 app.post("/api/login", function (req, res) {
   var user = store.users.find(function (item) { return item.username.toLowerCase() === String(req.body.username || "").trim().toLowerCase(); });
   if (!user) return res.status(401).json({ error: "Incorrect username or password." });
-  hashPassword(String(req.body.password || ""), user.salt, function (error, hash) {
+  passwords.hash(String(req.body.password || ""), user.salt, function (error, hash) {
     if (error || hash.length !== user.passwordHash.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(user.passwordHash))) return res.status(401).json({ error: "Incorrect username or password." });
     setSession(res, user); res.json({ user: profile(user) });
   });

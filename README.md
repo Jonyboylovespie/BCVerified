@@ -18,6 +18,16 @@ The server loads configuration from `.env`; existing environment variables take 
 openssl rand -hex 32
 ```
 
+## Reset a password
+
+Stop the app, then set a registered user's password from the server checkout:
+
+```sh
+npm run set-password -- <username>
+```
+
+The command prompts for a new password without displaying it, rotates the password salt, and invalidates that user's existing sessions. Restart the app after it succeeds. For non-interactive use, pass the new password as a second argument; note that doing so may expose it in shell history or the process list.
+
 ## Daily puzzles
 
 The server imports Bracket City's public dated puzzle JSON at startup and once an hour. Beginning July 14, 2026, each puzzle is cached under the gitignored `data/puzzles/YYYY-MM-DD.json` directory. Earlier archive dates are neither fetched nor saved. Dates use the `America/New_York` calendar so a puzzle is never filed under the wrong UTC day.
