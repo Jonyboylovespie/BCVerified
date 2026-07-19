@@ -10,7 +10,7 @@ cp .env.example .env
 npm start
 ```
 
-The server loads configuration from `.env`; existing environment variables take precedence. Open `http://localhost:3000`. Set a unique `SESSION_SECRET` before deploying, and set `PUBLIC_URL` to the public HTTPS origin so iMessage crawlers receive absolute preview URLs.
+The server loads configuration from `.env`; existing environment variables take precedence. Open `http://localhost:3000`. Set unique `SESSION_SECRET` and `ADMIN_SECRET` values before deploying, and set `PUBLIC_URL` to the public HTTPS origin so iMessage crawlers receive absolute preview URLs.
 
 `NODE_ENV` may be `development` or `production`. Generate a secure session secret with:
 
@@ -20,13 +20,13 @@ openssl rand -hex 32
 
 ## Reset a password
 
-Stop the app, then set a registered user's password from the server checkout:
+Set `ADMIN_SECRET` to a long random value in the app's environment, then set a registered user's password from the server checkout while the app is running:
 
 ```sh
 npm run set-password -- <username>
 ```
 
-The command prompts for a new password without displaying it, rotates the password salt, and invalidates that user's existing sessions. Restart the app after it succeeds. For non-interactive use, pass the new password as a second argument; note that doing so may expose it in shell history or the process list.
+The command calls an authenticated loopback-only endpoint in the running app, prompts for a new password without displaying it, rotates the password salt, persists the update, and invalidates that user's existing sessions immediately. If the app is not available at `http://127.0.0.1:$PORT`, set `ADMIN_URL` to its local base URL. For non-interactive use, pass the new password as a second argument; note that doing so may expose it in shell history or the process list.
 
 ## Daily puzzles
 

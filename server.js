@@ -11,6 +11,7 @@ var passwords = require("./lib/password");
 var app = express();
 var port = Number(process.env.PORT || 3000);
 var secret = process.env.SESSION_SECRET || "dev-only-change-this-secret";
+var adminSecret = process.env.ADMIN_SECRET || "";
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET is required in production.");
 }
@@ -72,6 +73,18 @@ function requireUser(req, res, next) {
   next();
 }
 
+function isLoopback(req) {
+  var address = req.socket.remoteAddress;
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+function hasAdminSecret(req) {
+  var authorization = String(req.headers.authorization || "");
+  var supplied = Buffer.from(authorization.indexOf("Bearer ") === 0 ? authorization.slice(7) : "");
+  var expected = Buffer.from(adminSecret);
+  return expected.length > 0 && supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+}
+
 function profile(user) {
   var completions = Object.keys(store.games).filter(function (key) {
     return key.indexOf(user.id + ":") === 0 && store.games[key].completedAt;
@@ -115,6 +128,44 @@ app.post("/api/login", function (req, res) {
 app.post("/api/logout", function (_req, res) {
   res.setHeader("Set-Cookie", "bc_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
   res.status(204).end();
+});
+
+app.post("/api/admin/set-password", function (req, res) {
+  if (!isLoopback(req) || !hasAdminSecret(req)) return res.status(404).json({ error: "Not found." });
+  var username = String(req.body.username || "").trim();
+  var newPassword = req.body.password;
+  if (typeof newPassword !== "string" || newPassword.length < passwords.minimumLength) {
+    return res.status(400).json({ error: "Password must be at least " + passwords.minimumLength + " characters." });
+  }
+  var user = store.users.find(function (item) {
+    return item.username.toLowerCase() === username.toLowerCase();
+  });
+  if (!user) return res.status(404).json({ error: "No user named " + username + " was found." });
+
+  var salt = crypto.randomBytes(16).toString("hex");
+  passwords.hash(newPassword, salt, function (error, hash) {
+    if (error) return res.status(500).json({ error: "Could not update the password." });
+    var previous = {
+      salt: user.salt,
+      passwordHash: user.passwordHash,
+      sessionVersion: user.sessionVersion,
+      passwordUpdatedAt: user.passwordUpdatedAt
+    };
+    user.salt = salt;
+    user.passwordHash = hash;
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+    user.passwordUpdatedAt = new Date().toISOString();
+    try { saveStore(); }
+    catch (saveError) {
+      Object.keys(previous).forEach(function (key) {
+        if (previous[key] === undefined) delete user[key];
+        else user[key] = previous[key];
+      });
+      console.error(saveError);
+      return res.status(500).json({ error: "Could not save the updated password." });
+    }
+    res.json({ username: user.username });
+  });
 });
 
 app.get("/api/me", function (req, res) {

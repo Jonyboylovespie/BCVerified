@@ -2,12 +2,9 @@
 
 require("dotenv").config({ quiet: true });
 
-var crypto = require("crypto");
-var fs = require("fs");
-var path = require("path");
+var http = require("http");
+var https = require("https");
 var passwords = require("../lib/password");
-
-var storePath = process.env.STORE_PATH || path.join(__dirname, "..", "data", "store.json");
 
 function usage() {
   console.error("Usage: npm run set-password -- <username> [new-password]");
@@ -55,12 +52,36 @@ function readHidden(prompt) {
   });
 }
 
-function hashPassword(password, salt) {
+function updatePassword(username, newPassword) {
+  var baseUrl = process.env.ADMIN_URL || "http://127.0.0.1:" + Number(process.env.PORT || 3000);
+  var endpoint = new URL("/api/admin/set-password", baseUrl);
+  var body = JSON.stringify({ username: username, password: newPassword });
+  var client = endpoint.protocol === "https:" ? https : http;
+
   return new Promise(function (resolve, reject) {
-    passwords.hash(password, salt, function (error, hash) {
-      if (error) reject(error);
-      else resolve(hash);
+    var request = client.request(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + process.env.ADMIN_SECRET,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body)
+      }
+    }, function (response) {
+      var responseBody = "";
+      response.setEncoding("utf8");
+      response.on("data", function (chunk) { responseBody += chunk; });
+      response.on("end", function () {
+        var result = {};
+        try { result = JSON.parse(responseBody); } catch (_) {}
+        if (response.statusCode >= 200 && response.statusCode < 300) return resolve(result);
+        reject(new Error(result.error || "Server returned HTTP " + response.statusCode + "."));
+      });
     });
+    request.setTimeout(10000, function () { request.destroy(new Error("The password update timed out.")); });
+    request.on("error", function (error) {
+      reject(new Error("Could not reach the running app at " + endpoint.origin + ": " + error.message));
+    });
+    request.end(body);
   });
 }
 
@@ -71,6 +92,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  if (!process.env.ADMIN_SECRET) throw new Error("ADMIN_SECRET must be set in .env and in the running app.");
 
   var newPassword = process.argv[3];
   if (newPassword === undefined) newPassword = await readHidden("New password: ");
@@ -78,34 +100,8 @@ async function main() {
     throw new Error("Password must be at least " + passwords.minimumLength + " characters.");
   }
 
-  var store;
-  try {
-    store = JSON.parse(fs.readFileSync(storePath, "utf8"));
-  } catch (error) {
-    throw new Error("Could not read user store at " + storePath + ": " + error.message);
-  }
-  if (!store || !Array.isArray(store.users)) throw new Error("User store does not contain a users array.");
-
-  var user = store.users.find(function (item) {
-    return String(item.username || "").toLowerCase() === username.toLowerCase();
-  });
-  if (!user) throw new Error("No user named " + username + " was found.");
-
-  var salt = crypto.randomBytes(16).toString("hex");
-  user.salt = salt;
-  user.passwordHash = await hashPassword(newPassword, salt);
-  user.sessionVersion = Number(user.sessionVersion || 0) + 1;
-  user.passwordUpdatedAt = new Date().toISOString();
-
-  var tempPath = storePath + ".tmp-" + process.pid;
-  try {
-    fs.writeFileSync(tempPath, JSON.stringify(store, null, 2));
-    fs.renameSync(tempPath, storePath);
-  } finally {
-    try { fs.unlinkSync(tempPath); } catch (_) {}
-  }
-
-  console.log("Password updated for " + user.username + ". Existing sessions were invalidated; restart the app before accepting traffic.");
+  var result = await updatePassword(username, newPassword);
+  console.log("Password updated for " + result.username + ". Existing sessions were invalidated.");
 }
 
 main().catch(function (error) {
