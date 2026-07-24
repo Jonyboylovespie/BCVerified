@@ -168,6 +168,42 @@ app.post("/api/admin/set-password", function (req, res) {
   });
 });
 
+
+app.post("/api/admin/set-score", function (req, res) {
+  if (!isLoopback(req) || !hasAdminSecret(req)) return res.status(404).json({ error: "Not found." });
+  var username = String(req.body.username || "").trim();
+  var date = String(req.body.date || "").trim();
+  var score = Number(req.body.score);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "Date must use YYYY-MM-DD format." });
+  if (!Number.isFinite(score) || score < 0 || score > 100 || Math.round(score) !== score) {
+    return res.status(400).json({ error: "Score must be a whole number from 0 to 100." });
+  }
+  var user = store.users.find(function (item) {
+    return item.username.toLowerCase() === username.toLowerCase();
+  });
+  if (!user) return res.status(404).json({ error: "No user named " + username + " was found." });
+
+  var key = user.id + ":" + date;
+  var state = store.games[key];
+  if (!state || !state.completedAt) return res.status(404).json({ error: username + " does not have a completed score for " + date + "." });
+  state.scoreOverride = score;
+  state.scoreUpdatedAt = new Date().toISOString();
+  var rank = game.rankFor(game.scoreFor(state), state);
+  Object.keys(store.shares).forEach(function (shareId) {
+    var share = store.shares[shareId];
+    if (share.userId === user.id && share.date === date) {
+      share.score = score;
+      share.rank = rank;
+    }
+  });
+  try { saveStore(); }
+  catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Could not save the updated score." });
+  }
+  res.json({ username: user.username, date: date, score: score, rank: rank });
+});
+
 app.get("/api/me", function (req, res) {
   var user = currentUser(req);
   res.json({ user: user ? profile(user) : null, today: today(), startDate: bracketCity.startDate });

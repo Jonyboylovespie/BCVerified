@@ -28,6 +28,16 @@ npm run set-password -- <username>
 
 The command calls an authenticated loopback-only endpoint in the running app, prompts for a new password without displaying it, rotates the password salt, persists the update, and invalidates that user's existing sessions immediately. If the app is not available at `http://127.0.0.1:$PORT`, set `ADMIN_URL` to its local base URL. For non-interactive use, pass the new password as a second argument; note that doing so may expose it in shell history or the process list.
 
+## Change a score
+
+Set `ADMIN_SECRET` to a long random value in the app's environment, then change a registered user's completed score for a specific day from the server checkout while the app is running:
+
+```sh
+npm run set-score -- <username> <YYYY-MM-DD> <score>
+```
+
+The command calls an authenticated loopback-only endpoint in the running app, stores a manual score override for that completed day, and updates any existing verified share record for the same user and date. Scores must be whole numbers from 0 through 100. If the app is not available at `http://127.0.0.1:$PORT`, set `ADMIN_URL` to its local base URL.
+
 ## Daily puzzles
 
 The server imports Bracket City's public dated puzzle JSON at startup and once an hour. Beginning July 14, 2026, each puzzle is cached under the gitignored `data/puzzles/YYYY-MM-DD.json` directory. Earlier archive dates are neither fetched nor saved. Dates use the `America/New_York` calendar so a puzzle is never filed under the wrong UTC day.
